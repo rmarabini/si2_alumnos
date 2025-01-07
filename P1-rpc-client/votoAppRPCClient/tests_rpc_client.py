@@ -11,8 +11,7 @@ from django.urls import reverse
 from django.conf import settings
 from rest_framework import status
 import os
-# get calling file
-# import inspect
+import psycopg2
 
 
 class VotingViewsTest(TestCase):
@@ -24,7 +23,27 @@ class VotingViewsTest(TestCase):
 
         # Django test client
         self.client = Client()
-        # base_url = None  # Default value, overridden in subclasses
+        # direct access to the database, since
+        # the test database is not the same as the one
+        # used by the API
+        connection_string = settings.DATABASE_SERVER_URL
+        self.connection = psycopg2.connect(connection_string)
+        self.cursor = self.connection.cursor()
+
+        # delete votes
+        self.cursor.execute("DELETE FROM voto;")
+        self.connection.commit()
+
+        self.censo_data = {
+            'numeroDNI': '23',
+            'nombre': '23',
+            'fechaNacimiento': '23',
+            'anioCenso': '23',
+            'codigoAutorizacion': '23'
+        }
+
+        # Insert censo data if needed
+        self.insertCenso(self.censo_data)
 
         self.voto_valid_data = {
             "idCircunscripcion": "CIRC123",
@@ -34,37 +53,65 @@ class VotingViewsTest(TestCase):
             "censo_id": "23"
         }
 
-        self.censo_data = {
-            'numeroDNI': '23',
-            'nombre': '23',
-            'fechaNacimiento': '23',
-            'anioCenso': '23',
-            'codigoAutorizacion': '23'
-        }
         self.url_voto_store = reverse('voto')
         self.url_censo_check = reverse('censo')
         self.url_testbd = reverse('testbd')
 
-        # since we use an API the test database is not the one
-        # in which data is going to be saved, so we better reset the
-        # database to a known state
-        print("deleting votes")
-        # this is a horrible hack but I do not know how to delete
-        # data in the orignal database (used by restapi_server
-        # and not in the test one) Other options seems to conflict
-        # with the way the tests are run.
-        # NOTE that the test creates the test_$DATABASE_CLIENT_URL database and
-        # any acces to models will be in this database
-        # but the database accesed by restapi_server is $DATABASE_SERVER_URL
-        self.DATABASE_SERVER_URL = settings.DATABASE_SERVER_URL
-        self.vototable = 'voto'
-        os.system(f"echo 'delete from \"{self.vototable}\"'"
-                  f" | psql {self.DATABASE_SERVER_URL}")
+    def verifyvotoCreation(self, numeroDNI):
+        query = f"SELECT * FROM voto where censo_id='{numeroDNI}';"
+        self.cursor.execute(query)
+        rows = self.cursor.fetchall()
+        if len(rows) == 0:
+            return 0, None
+        return len(rows), rows[0][0]
 
-        print(f"""This test only works if (1) {settings.RESTAPIBASEURL} server
-              is  up and running and (2) the database is populated.
-              Very likely in the future ths test should be done with mocks
-              and not real calls to the server.""")
+    def insertVoto(self, voto_data):
+        insert_censo_query = """
+        INSERT INTO voto (
+            "idCircunscripcion",
+            "idMesaElectoral",
+            "idProcesoElectoral",
+            "nombreCandidatoVotado",
+            "marcaTiempo",
+            "codigoRespuesta",
+            "censo_id"
+            )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        self.cursor.execute(
+            insert_censo_query, (
+                voto_data["idCircunscripcion"],
+                voto_data["idMesaElectoral"],
+                voto_data["idProcesoElectoral"],
+                voto_data["nombreCandidatoVotado"],
+                voto_data["marcaTiempo"],
+                voto_data["codigoRespuesta"],
+                voto_data["censo_id"],
+                )
+            )
+        self.connection.commit()
+
+    def insertCenso(self, cemso_data):
+        insert_censo_query = """
+            INSERT INTO censo (
+                "numeroDNI",
+                nombre,
+                "fechaNacimiento",
+                "anioCenso",
+                "codigoAutorizacion")
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT ("numeroDNI") DO NOTHING;
+        """
+        self.cursor.execute(
+            insert_censo_query, (
+                cemso_data["numeroDNI"],
+                cemso_data["nombre"],
+                cemso_data["fechaNacimiento"],
+                cemso_data["anioCenso"],
+                cemso_data["codigoAutorizacion"]
+                )
+            )
+        self.connection.commit()
 
     def test_01_aportarinfo_censo_valid_post(self):
         """Check Censo information
@@ -115,7 +162,7 @@ class VotingViewsTest(TestCase):
         # Check result
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         voto = response.context.get('voto')
-        # print("voto", voto)
+        print("voto", voto)
         # compare voto and voto_valid_data
         for key in self.voto_valid_data:
             if key == 'censo_id':
@@ -127,15 +174,14 @@ class VotingViewsTest(TestCase):
     def test_03_delvoto_valid_post(self):
         """Test deleting an existing Voto object."""
         # create voto entry
-        command = f"""echo "INSERT into {self.vototable}
-            (\\"id\\", \\"idCircunscripcion\\", \\"idMesaElectoral\\",
-             \\"idProcesoElectoral\\", \\"nombreCandidatoVotado\\",
-             \\"marcaTiempo\\", \\"codigoRespuesta\\", \\"censo_id\\")
-        VALUES (999999999, 'a', 'b', 'c', 'd', now(), '000', 23);" |
-        psql {self.DATABASE_SERVER_URL}"""
-        # print(command)
-        _ = os.system(command)
-        data = {'id': 999999999}
+        voto_data = {**self.voto_valid_data, 
+                     'marcaTiempo': '2022-01-01 00:00:00',
+                     'codigoRespuesta': '000',
+                     'censo_id': self.censo_data['numeroDNI']}
+        self.insertVoto(voto_data)
+        numeroDNI = self.censo_data['numeroDNI']
+        num_rows, voto_id = self.verifyvotoCreation(numeroDNI)
+        data = {'id': voto_id}
         response = self.client.post(reverse('delvoto'), data=data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertContains(response, "Voto eliminado correctamente")
@@ -143,13 +189,11 @@ class VotingViewsTest(TestCase):
     def test_035_delvoto_invalid_post(self):
         """Test deleting an existing Voto object."""
         # create voto entry
-        command = f"""echo "INSERT into {self.vototable}
-            (\\"id\\", \\"idCircunscripcion\\", \\"idMesaElectoral\\",
-             \\"idProcesoElectoral\\", \\"nombreCandidatoVotado\\",
-             \\"marcaTiempo\\", \\"codigoRespuesta\\", \\"censo_id\\")
-        VALUES (999999999, 'a', 'b', 'c', 'd', now(), '000', 23);" |
-        psql {self.DATABASE_SERVER_URL}"""
-        _ = os.system(command)
+        voto_data = {**self.voto_valid_data, 
+                     'marcaTiempo': '2022-01-01 00:00:00',
+                     'codigoRespuesta': '000',
+                     'censo_id': self.censo_data['numeroDNI']}
+        self.insertVoto(voto_data)
         data = {'id': 999999998}
         response = self.client.post(reverse('delvoto'), data=data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -157,34 +201,33 @@ class VotingViewsTest(TestCase):
 
     def test_04_getVotos_post(self):
         """Test deleting an existing Voto object."""
+        # create censo entry
+        self.censo_data['numeroDNI'] = '83583583L'
+        self.insertCenso(self.censo_data)
+        self.censo_data['numeroDNI'] = '67867868T'
+        self.insertCenso(self.censo_data)
+
         # create voto entry
-        command = f"""echo "INSERT into {self.vototable}
-            (\\"id\\", \\"idCircunscripcion\\", \\"idMesaElectoral\\",
-             \\"idProcesoElectoral\\", \\"nombreCandidatoVotado\\",
-             \\"marcaTiempo\\", \\"codigoRespuesta\\", \\"censo_id\\")
-        VALUES (999999990, 'aaaaa0', 'b0', 'c0', 'd0',
-        now(), '000', '39739740E');" | psql {self.DATABASE_SERVER_URL}"""
-        os.system(command)
-        command = f"""echo "INSERT into {self.vototable}
-            (\\"id\\", \\"idCircunscripcion\\", \\"idMesaElectoral\\",
-             \\"idProcesoElectoral\\", \\"nombreCandidatoVotado\\",
-             \\"marcaTiempo\\", \\"codigoRespuesta\\", \\"censo_id\\")
-        VALUES (999999991, 'aaaaa1', 'b1', 'c0', 'd1',
-        now(), '000', '83583583L');" | psql {self.DATABASE_SERVER_URL}"""
-        os.system(command)
-        command = f"""echo "INSERT into {self.vototable}
-            (\\"id\\", \\"idCircunscripcion\\", \\"idMesaElectoral\\",
-             \\"idProcesoElectoral\\", \\"nombreCandidatoVotado\\",
-             \\"marcaTiempo\\", \\"codigoRespuesta\\", \\"censo_id\\")
-        VALUES (999999992, 'aaaaa2', 'b2', 'c2', 'd2',
-        now(), '000', '67867868T');" | psql {self.DATABASE_SERVER_URL}"""
-        os.system(command)
+        voto_data = {**self.voto_valid_data, 
+                     'marcaTiempo': '2022-01-01 00:00:00',
+                     'codigoRespuesta': '000',
+                     'censo_id': self.censo_data['numeroDNI']}
+        voto_data['nombreCandidatoVotado'] = 'aaaaa0'
+        self.insertVoto(voto_data)
+        voto_data['censo_id'] = '83583583L'
+        voto_data['idProcesoElectoral'] = 'c0'
+        voto_data['nombreCandidatoVotado'] = 'aaaaa1'
+        self.insertVoto(voto_data)
+        voto_data['censo_id'] = '67867868T'
+        voto_data['nombreCandidatoVotado'] = 'aaaaa2'
+        self.insertVoto(voto_data)
+
         data = {'idProcesoElectoral': 'c0'}
         response = self.client.post(reverse('getvotos'), data=data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertContains(response, "aaaaa0")
         self.assertContains(response, "aaaaa1")
-        self.assertNotContains(response, "aaaaa2")
+        self.assertContains(response, "aaaaa2")
+        self.assertNotContains(response, "aaaaa0")
 
     def test_10_testdb_post(self):
         data_censo = self.censo_data
