@@ -9,7 +9,9 @@
 ## git commit -m "Removed env from Git tracking and added to .gitignore"
 # Push the changes to the remote repository
 ## git push
-
+# use sqlite 3
+##DATABASE_SERVEL_URL=sqlite:///db.sqlite3
+# use postgres
 DATABASE_SERVER_URL='postgres://alumnodb:alumnodb@localhost:5432/voto'
 # The client does not need to store data in any database
 # so let us define a sqlite in orden to avoid warning messages
