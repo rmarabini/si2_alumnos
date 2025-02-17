@@ -43,7 +43,8 @@ class VotingViewsTest(TestCase):
         }
         self.url_voto_store = reverse('voto')
         self.url_censo_check = reverse('censo')
-        self.url_testbd = reverse('testbd')
+        # no testdb is required in ws-server
+        # self.url_testbd = reverse('testbd')
 
         # since we use an API the test database is not the one
         # in which data is going to be saved, so we better reset the
@@ -186,7 +187,7 @@ class VotingViewsTest(TestCase):
         self.assertContains(response, "aaaaa1")
         self.assertNotContains(response, "aaaaa2")
 
-    def test_10_testdb_post(self):
+    def xxtest_10_testdb_post(self):
         data_censo = self.censo_data
         data_voto = self.voto_valid_data
         data = {**data_censo, **data_voto}
@@ -210,7 +211,7 @@ class VotingViewsTest(TestCase):
                 self.voto_valid_data[key],
                 voto[key])
 
-    def test_11_testdb_invalid_post(self):
+    def xxtest_11_testdb_invalid_post(self):
         data_voto = self.voto_valid_data
         data = {**data_voto}
 
