@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Registrar Pago {{ title}}</title>
+</head>
+<body>
+    <h1>Registro de Pago {{ title}}</h1>
+
+    <p> Introduzca los datos del nuevo pago a registrar:
+
+    <form method="post">
+	{% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Enviar Información Pago</button>
+    </form>
+</body>
+</html>

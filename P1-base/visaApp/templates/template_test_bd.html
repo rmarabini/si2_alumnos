@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test BD  {{ title}}</title>
+</head>
+<body>
+    <h2>Test Base de Datos: Registro de Pago {{ title}}</h2>
+
+    <p> Introduzca los datos del nuevo pago a registrar:
+
+    <form method="post">
+	{% csrf_token %}
+        {{ pago_form.as_p }}
+        {{ tarjeta_form.as_p }}
+        <button type="submit">Registrar Pago</button>
+    </form>
+
+    <h2>Test Base de Datos: Borrado de Pago</h2>
+
+    <p> Introduzca el ID del Pago a Borrar:
+
+    <form method="post" action = "delpago/">
+	{% csrf_token %}
+        {{ del_pago_form.as_p }}
+        <button type="submit">Borrar Pago</button>
+    </form>
+
+    <h2>Test Base de Datos: Listado de Pagos</h2>
+
+    <p> Introduzca el ID del Comercio:
+
+    <form method="post" action = "getpagos/">
+	{% csrf_token %}
+        {{ get_pagos_form.as_p }}
+        <button type="submit">Obtener Pagos</button>
+    </form>
+
+</body>
+</html>

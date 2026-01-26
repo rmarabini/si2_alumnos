@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Listado de pagos {{ title}}</title>
+</head>
+<body>
+    <h2>Pagos Registrados  {{ title}}</h2>
+	<table border = "1">
+	<tr>
+	<td>id</td>
+	<td>IdComercio</td>
+	<td>IdTransaccion</td>
+	<td>Importe</td>
+	<td>Marca Tiempo</td>
+	<td>Codigo Respuesta</td>
+	</tr>
+
+	{% for pago in result %}
+	<tr>
+		<td> {{pago.id}} </td>
+		<td> {{pago.idComercio}} </td>
+		<td> {{pago.idTransaccion}} </td>
+		<td> {{pago.importe}} </td>
+		<td> {{pago.marcaTiempo}} </td>
+		<td> {{pago.codigoRespuesta}} </td>
+	</tr>
+	{% endfor %}
+	</table>
+</body>
+</html>
