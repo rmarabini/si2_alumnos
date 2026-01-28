@@ -1,1 +1,2 @@
-Este directorio contiene el fichero UbuntuMini.sh que sirve para crear las diferentes maquinas virtuales usadas en la práctica. En moodle estas accesibles dichas máquinas ya creadas por lo que, en general, UbuntuMini.sh no necesita ser ejecutado.
+Este directorio contiene el fichero UbuntuMini.sh que sirve para crear las diferentes maquinas virtuales usadas en la práctica. En moodle estas accesibles dichas máquinas ya creadas por lo que, en general, UbuntuMini.sh no necesita ser ejecutado y puede ignorarse.
+
