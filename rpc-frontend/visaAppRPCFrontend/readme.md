@@ -1,1 +1,1 @@
-codigo pendiente de actualizacion
+test for RPC frontend endpoint (identical to API rest corresponding test)
