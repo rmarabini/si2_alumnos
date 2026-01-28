@@ -1,38 +1,44 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 import json
-from .models import Censo, Voto
+from .models import Tarjeta, Pago
 from copy import deepcopy
 from rest_framework import status
 
 
 class RpcEndpointTestCase(TestCase):
+    """
+    Test suite for JSON-RPC endpoints related to Tarjeta and Pago operations.
+    """
+
     def setUp(self):
-        # Initialize the test client
+        """Initialize common test data and Django test client."""
+        # Django test client
         self.client = Client()
 
-        self.censo_data = {
-            'numeroDNI': '39739740E',
+        # Sample tarjeta data
+        self.tarjeta_data = {
+            'numero': '1111 2222 3333 4444',
             'nombre': 'Jose Moreno Locke',
-            'fechaNacimiento': '09/04/66',
+            'fechaCaducidad': '04/36',
             'codigoAutorizacion': '729'
         }
 
-        self.voto_data = {
-            "idCircunscripcion": "CIRC123",
-            "idMesaElectoral": "MESA123",
-            "idProcesoElectoral": "ELEC123",
-            "nombreCandidatoVotado": "Candidate A",
-            # Assuming this is an existing primary key in Censo
-            # "censo_id": "123456789"
+        # Sample pago data (tarjeta FK added when needed)
+        self.pago_data = {
+            "idComercio": "COM123",
+            "idTransaccion": "TR123",
+            "importe": 23.0,
         }
 
-    def disable_test_rpc_addition(self):  # Done
-        # Define the URL for the RPC endpoint
-        # Use the correct name for your RPC endpoint if it's not rpc
+    def disable_test_rpc_addition(self):
+        """
+        (Disabled) Test a simple JSON-RPC arithmetic method.
+        Used to validate the RPC infrastructure.
+        """
         url = reverse('rpc')
 
-        # Define the payload matching your example
+        # JSON-RPC payload for test_add(5, 9)
         payload = {
             "id": 2,
             "method": "test_add",
@@ -40,169 +46,140 @@ class RpcEndpointTestCase(TestCase):
             "jsonrpc": "2.0"
         }
 
-        # Make the POST request to the RPC endpoint
+        # Send JSON-RPC request
         response = self.client.post(
             url,
             data=json.dumps(payload),
-            content_type="application/json")
+            content_type="application/json"
+        )
 
-        # Parse the JSON response
+        # Parse response
         response_data = response.json()
 
-        # Check the HTTP status code
-        self.assertEqual(response.status_code, 200)
-
-        # Verify that the JSON-RPC response is correct
-        expected_result = 14  # The expected result for test_add(5, 9)
-        self.assertEqual(response_data.get('result'), expected_result)
+        # Validate JSON-RPC response
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_data.get('result'), 14)
         self.assertEqual(response_data.get('id'), payload['id'])
         self.assertEqual(response_data.get('jsonrpc'), "2.0")
 
-    def test_00_rpc_voto(self):
-        "create voto using rpc call"
-        # Define the URL for the RPC endpoint
+    def test_00_rpc_pago(self):
+        """Create a Pago using an RPC call."""
         url = reverse('rpc')
 
-        # create censo entry
-        _ = Censo.objects.create(**self.censo_data)
+        # Create tarjeta required by foreign key
+        Tarjeta.objects.create(**self.tarjeta_data)
 
-        # Define the payload matching your example
-        data = self.voto_data
-        # add foreign key
-        data['censo_id'] = self.censo_data['numeroDNI']
+        # Prepare pago data including tarjeta reference
+        data = self.pago_data.copy()
+        data['tarjeta_id'] = self.tarjeta_data['numero']
+
         payload = {
             "id": 2,
-            "method": "registrar_voto",
-            "params": {'voto_dict': data},
+            "method": "registrar_pago",
+            "params": {'pago_dict': data},
             "jsonrpc": "2.0"
         }
-        # Make the POST request to the RPC endpoint
-        response = self.client.post(
-            url, data=json.dumps(payload),
-            content_type="application/json")
 
-        # Parse the JSON response
+        # Send RPC request
+        response = self.client.post(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json"
+        )
+
+        # Validate response payload
         response_data = response.json()
-        voto = response_data['result']
-        for k, v in data.items():
-            if k == 'censo_id':
-                continue
-            self.assertEqual(voto[k], v)
+        pago = response_data['result']
 
-    def test_01_rpc_censo(self):
-        "check censo using rpc call"
-        # Define the URL for the RPC endpoint
+        for key, value in data.items():
+            if key != 'tarjeta_id':
+                self.assertEqual(pago[key], value)
+
+    def test_01_rpc_tarjeta(self):
+        """Verify tarjeta data using an RPC call."""
         url = reverse('rpc')
 
-        data = self.censo_data
-        _ = Censo.objects.create(**data)
-        # Define the payload matching your example
+        # Insert tarjeta into database
+        Tarjeta.objects.create(**self.tarjeta_data)
+
         payload = {
             "id": 2,
-            "method": "verificar_censo",
-            "params": {'censo_data': data},
+            "method": "verificar_tarjeta",
+            "params": {'tarjeta_data': self.tarjeta_data},
             "jsonrpc": "2.0"
         }
-        # Make the POST request to the RPC endpoint
-        response = self.client.post(
-            url, data=json.dumps(payload), content_type="application/json")
 
-        # Parse the JSON response
+        response = self.client.post(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json"
+        )
+
         response_data = response.json()
         result = response_data.get('result')
-        # print("result", result)
+
         self.assertTrue(result)
-        # self.assertEqual(result[1], data['numeroDNI'])
 
     def test_10_del(self):
-        "delete vote using rcp call"
-        data = self.censo_data
-        censo = Censo.objects.create(**data)
-        data_voto = self.voto_data
-        # create Voto
-        voto = Voto.objects.create(**data_voto, censo=censo)
-        voto_id = voto.id
+        """Delete an existing Pago using an RPC call."""
+        # Create tarjeta and pago
+        tarjeta = Tarjeta.objects.create(**self.tarjeta_data)
+        pago = Pago.objects.create(**self.pago_data, tarjeta=tarjeta)
 
-        url = reverse('rpc')
         payload = {
             "id": 10,
-            "method": "eliminar_voto",
-            "params": [voto_id],
+            "method": "eliminar_pago",
+            "params": [pago.id],
             "jsonrpc": "2.0"
         }
-        # Make the POST request to the RPC endpoint
-        response = self.client.post(
-            url,
-            data=json.dumps(payload),
-            content_type="application/json")
 
-        # Parse the JSON response
+        response = self.client.post(
+            reverse('rpc'),
+            data=json.dumps(payload),
+            content_type="application/json"
+        )
+
         response_data = response.json()
-        status = response_data.get('result')
-        self.assertTrue(status)
+        self.assertTrue(response_data.get('result'))
 
     def test_20_list(self):
-        # create censo entry
-        censo = Censo.objects.create(**self.censo_data)
-        # create another censo entry
-        self.censo_data['numeroDNI'] = '123456789'
-        censo2 = Censo.objects.create(**self.censo_data)
+        """Retrieve pagos filtered by idComercio using RPC."""
+        # Create tarjetas
+        tarjeta1 = Tarjeta.objects.create(**self.tarjeta_data)
 
-        # create voto entry
-        _ = Voto.objects.create(**self.voto_data, censo=censo)
-        # create another voto entry
-        self.voto_data['nombreCandidatoVotado'] = 'Candidate B'
-        _ = Voto.objects.create(**self.voto_data, censo=censo2)
-        another_voto = deepcopy(self.voto_data)
-        another_voto['idProcesoElectoral'] = 'another process'
-        _ = Voto.objects.create(**another_voto, censo=censo2)
+        tarjeta_data2 = self.tarjeta_data.copy()
+        tarjeta_data2['numero'] = '123456789'
+        tarjeta2 = Tarjeta.objects.create(**tarjeta_data2)
 
-        url = reverse('rpc')
+        # Create pagos
+        Pago.objects.create(**self.pago_data, tarjeta=tarjeta1)
+
+        pago_data2 = self.pago_data.copy()
+        pago_data2['idTransaccion'] = 'B'
+        Pago.objects.create(**pago_data2, tarjeta=tarjeta2)
+
+        pago_data3 = deepcopy(self.pago_data)
+        pago_data3['idComercio'] = 'C'
+        Pago.objects.create(**pago_data3, tarjeta=tarjeta2)
+
         payload = {
             "id": 10,
-            "method": "get_votos_from_db",
-            "params": [self.voto_data['idProcesoElectoral']],
+            "method": "get_pagos_from_db",
+            "params": [self.pago_data['idComercio']],
             "jsonrpc": "2.0"
         }
-        # Make the POST request to the RPC endpoint
+
         response = self.client.post(
-            url,
+            reverse('rpc'),
             data=json.dumps(payload),
-            content_type="application/json")
+            content_type="application/json"
+        )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
         response_data = response.json()
         result = response_data.get('result')
+
+        # Only pagos with matching idComercio should be returned
         self.assertEqual(len(result), 2)
 
-    # def test_30_testdb(self):
-    #     " create voto and check censo with a single call"
-    #     data = self.censo_data
-    #     censo = Censo.objects.create(**data)
-    #     voto_data = self.voto_data
-    #     censo_data = self.censo_data
-    #     all_data = {**voto_data, **censo_data}
-
-    #     url = reverse('rpc')
-    #     payload = {
-    #         "id": 30,
-    #         "method": "TestBDProcedure",
-    #         "params": list(all_data.values()),
-    #         "jsonrpc": "2.0"
-    #     }
-    #     # Make the POST request to the RPC endpoint
-    #     response = self.client.post(
-    #         url,
-    #         data=json.dumps(payload),
-    #         content_type="application/json")
-    #     # Parse the JSON response
-    #     response_data = response.json()
-    #     status, result = response_data.get('result')
-    #     self.assertTrue(status)
-    #     self.assertEqual(result['idCircunscripcion'],
-    #                      voto_data['idCircunscripcion'])
-    #     self.assertEqual(result['idMesaElectoral'],
-    #                      voto_data['idMesaElectoral'])
-    #     self.assertEqual(result['idProcesoElectoral'],
-    #                      voto_data['idProcesoElectoral'])
-    #     self.assertEqual(result['nombreCandidatoVotado'],
-    #                      voto_data['nombreCandidatoVotado'])
