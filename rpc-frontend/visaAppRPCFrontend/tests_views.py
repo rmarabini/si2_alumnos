@@ -1,198 +1,250 @@
-# tests.py
+# ----------------------------------------------------------------------
+# Common test code for client applications
+#
+# This test suite covers both REST API endpoints and RCP procedures.
+#
+# NOTE:
+# We cannot use the standard Django test database because it is
+# different from the database used by the REST API server or the
+# RCP machine. Therefore, these tests require a direct connection
+# to the target PostgreSQL database.
+#
+# Author: Roberto Marabini
+# ----------------------------------------------------------------------
+
 from django.test import TestCase, Client
 from django.urls import reverse
-# from .forms import VotoForm, CensoForm, DelVotoForm, GetVotosForm
 from django.conf import settings
+from rest_framework import status
 import psycopg2
 
 
-class VotoCensoViewsTest(TestCase):
+class PagoViewsTest(TestCase):
+    """
+    Test suite for Pago-related API views and RCP procedures.
+    """
+
     def setUp(self):
-        # create virtual browser
+        """Initialize test client and database connection."""
+        # Django test client
         self.client = Client()
-        # direct access to the database, since
-        # the test database is not the same as the one
-        # used by the API
+
+        # Direct database connection (not Django test DB)
         connection_string = settings.DATABASE_SERVER_URL
         self.connection = psycopg2.connect(connection_string)
         self.cursor = self.connection.cursor()
 
-        # delete votes
-        self.cursor.execute("DELETE FROM voto;")
+        # Clean pago table before each test
+        self.cursor.execute("DELETE FROM pago;")
         self.connection.commit()
 
-        # Set up initial test data
-        self.censo_data = {
-            'numeroDNI': '39739740E',
-            'nombre': 'Jose Moreno Locke',
-            'fechaNacimiento': '09/04/66',
-            'anioCenso': '2025',
-            'codigoAutorizacion': '729'
+        # Default tarjeta test data
+        self.tarjeta_data = {
+            'numero': '23',
+            'nombre': '23',
+            'fechaCaducidad': '23',
+            'codigoAutorizacion': '23'
         }
 
-        # Insert censo data if needed
-        self.insertCenso(self.censo_data)
-        self.voto_data = {
-            'idCircunscripcion': 'CIRC123',
-            'idMesaElectoral': 'MESA123',
-            'idProcesoElectoral': 'ELEC123',
-            'nombreCandidatoVotado': 'Candidate A'
+        # Ensure tarjeta exists in database
+        self.insertTarjeta(self.tarjeta_data)
+
+        # Default valid pago data
+        self.pago_valid_data = {
+            "idComercio": "COM123",
+            "idTransaccion": "TR123",
+            "importe": 23.0,
+            "tarjeta_id": "23"
         }
 
-        # URL endpoints for views
-        self.aportarinfo_voto_url = reverse('voto')
-        self.aportarinfo_censo_url = reverse('censo')
-        self.testbd_url = reverse('testbd')
-        self.delvoto_url = reverse('delvoto')
-        self.getvotos_url = reverse('getvotos')
+        # URL endpoints
+        self.url_pago_store = reverse('pago')
+        self.url_tarjeta_check = reverse('tarjeta')
+        self.url_testbd = reverse('testbd')
 
-    def verifyvotoCreation(self, numeroDNI):
-        query = f"SELECT * FROM voto where censo_id='{numeroDNI}';"
+    def verifypagoCreation(self, numeroTarjeta):
+        """
+        Verify whether a pago exists for a given tarjeta number.
+
+        Returns:
+            (count, pago_id) or (0, None) if not found
+        """
+        query = f"SELECT * FROM pago WHERE tarjeta_id='{numeroTarjeta}';"
         self.cursor.execute(query)
         rows = self.cursor.fetchall()
+
         if len(rows) == 0:
             return 0, None
+
         return len(rows), rows[0][0]
 
-    def insertVoto(self, voto_data):
-        insert_censo_query = """
-        INSERT INTO voto (
-            "idCircunscripcion",
-            "idMesaElectoral",
-            "idProcesoElectoral",
-            "nombreCandidatoVotado",
+    def insertPago(self, pago_data):
+        """Insert a pago record directly into the database."""
+        insert_pago_query = """
+        INSERT INTO pago (
+            "idComercio",
+            "idTransaccion",
+            "importe",
             "marcaTiempo",
             "codigoRespuesta",
-            "censo_id"
-            )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+            "tarjeta_id"
+        )
+        VALUES (%s, %s, %s, %s, %s, %s)
         """
         self.cursor.execute(
-            insert_censo_query, (
-                voto_data["idCircunscripcion"],
-                voto_data["idMesaElectoral"],
-                voto_data["idProcesoElectoral"],
-                voto_data["nombreCandidatoVotado"],
-                voto_data["marcaTiempo"],
-                voto_data["codigoRespuesta"],
-                voto_data["censo_id"],
-                )
+            insert_pago_query,
+            (
+                pago_data["idComercio"],
+                pago_data["idTransaccion"],
+                pago_data["importe"],
+                pago_data["marcaTiempo"],
+                pago_data["codigoRespuesta"],
+                pago_data["tarjeta_id"],
             )
+        )
         self.connection.commit()
 
-    def insertCenso(self, cemso_data):
-        insert_censo_query = """
-            INSERT INTO censo (
-                "numeroDNI",
-                nombre,
-                "fechaNacimiento",
-                "anioCenso",
-                "codigoAutorizacion")
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT ("numeroDNI") DO NOTHING;
+    def insertTarjeta(self, tarjeta_data):
+        """Insert tarjeta record if it does not already exist."""
+        insert_tarjeta_query = """
+        INSERT INTO tarjeta (
+            "numero",
+            nombre,
+            "fechaCaducidad",
+            "codigoAutorizacion"
+        )
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT ("numero") DO NOTHING;
         """
         self.cursor.execute(
-            insert_censo_query, (
-                cemso_data["numeroDNI"],
-                cemso_data["nombre"],
-                cemso_data["fechaNacimiento"],
-                cemso_data["anioCenso"],
-                cemso_data["codigoAutorizacion"]
-                )
+            insert_tarjeta_query,
+            (
+                tarjeta_data["numero"],
+                tarjeta_data["nombre"],
+                tarjeta_data["fechaCaducidad"],
+                tarjeta_data["codigoAutorizacion"],
             )
+        )
         self.connection.commit()
 
-    def test_00_aportarinfo_censo_valid_submission(self):
-        # Post valid data to `aportarinfo_voto` view
-        response = self.client.post(self.aportarinfo_censo_url,
-                                    data=self.censo_data)
+    def test_01_aportarinfo_tarjeta_valid_post(self):
+        """Test valid tarjeta submission."""
+        response = self.client.post(reverse('tarjeta'), self.tarjeta_data)
 
-        # Check if data is saved in the session
-        session_data = self.client.session['numeroDNI']
-        self.assertEqual(session_data, self.censo_data['numeroDNI'])
-        # Check if redirected to `voto` page
-        self.assertRedirects(response, reverse('voto'))
+        # Expect redirect to pago view
+        self.assertEqual(response.status_code, status.HTTP_302_FOUND)
+        self.assertEqual(response.url, reverse('pago'))
 
-    def test_01_aportarinfo_censo_invalid_submission(self):
-        # Submit empty form data
-        response = self.client.post(
-            self.aportarinfo_censo_url, data={})
-        self.assertIn('Error', str(response.content))
-
-    def test_05_aportarinfo_voto_with_valid_censo_data(self):
-        # Set up session data with valid censo data
+        # Verify session data
         session = self.client.session
-        session['numeroDNI'] = self.censo_data['numeroDNI']
+        self.assertEqual(session['numeroTarjeta'], self.tarjeta_data['numero'])
+
+    def test_015_aportarinfo_tarjeta_invalid_post(self):
+        """Test invalid tarjeta submission."""
+        data = self.tarjeta_data.copy()
+        data['numero'] = '845rtte34'  # invalid tarjeta number
+
+        response = self.client.post(reverse('tarjeta'), data)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue("Error" in str(response.content))
+
+    def test_02_store_pago_valid_post(self):
+        """Test valid pago creation via API."""
+        # Simulate prior tarjeta submission
+        session = self.client.session
+        session['numeroTarjeta'] = self.tarjeta_data['numero']
         session.save()
 
-        # Submit valid Voto data
         response = self.client.post(
-            self.aportarinfo_voto_url, data=self.voto_data)
-        # Check if voto was created
-        numeroDNI = self.censo_data['numeroDNI']
-        num_rows, voto_id = self.verifyvotoCreation(numeroDNI)
-        print("num_rows: ", num_rows)
-        print("voto_id: ", voto_id)
-        self.assertEqual(num_rows, 1)
-        self.assertTemplateUsed(response, 'template_exito.html')
+            reverse('pago'),
+            data=self.pago_valid_data,
+            format='json'
+        )
 
-    def test_06_aportarinfo_voto_without_censo_data(self):
-        # Submit valid Voto data without censo_data in session
-        response = self.client.post(self.aportarinfo_voto_url,
-                                    data=self.voto_data)
-        # print("response: ", response.content)
-        self.assertTemplateUsed(response, 'template_mensaje.html')
-        self.assertContains(response, 'Error')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_10_testbd_valid_submission(self):
-        # Submit valid data for both Voto and Censo forms
-        combined_data = {**self.voto_data, **self.censo_data}
-        response = self.client.post(self.testbd_url, data=combined_data)
+        # Validate returned pago data
+        pago = response.context.get('pago')
+        for key in self.pago_valid_data:
+            if key != 'tarjeta_id':
+                self.assertEqual(self.pago_valid_data[key], pago[key])
 
-        # Verify Voto creation
-        # Check if voto was created
-        numeroDNI = self.censo_data['numeroDNI']
-        num_rows, voto_id = self.verifyvotoCreation(numeroDNI)
-        self.assertEqual(num_rows, 1)
-        self.assertTemplateUsed(response, 'template_exito.html')
+    def test_03_delpago_valid_post(self):
+        """Test deletion of an existing pago."""
+        pago_data = {
+            **self.pago_valid_data,
+            'marcaTiempo': '2022-01-01 00:00:00',
+            'codigoRespuesta': '000',
+            'tarjeta_id': self.tarjeta_data['numero']
+        }
+        self.insertPago(pago_data)
 
-    def test_15_delvoto_valid_deletion(self):
-        # Create a Voto instance to delete
-        voto_data = {**self.voto_data, 
-                     'marcaTiempo': '2022-01-01 00:00:00',
-                     'codigoRespuesta': '000',
-                     'censo_id': self.censo_data['numeroDNI']}
-        self.insertVoto(voto_data)
-        numeroDNI = self.censo_data['numeroDNI']
-        num_rows, voto_id = self.verifyvotoCreation(numeroDNI)
+        _, pago_id = self.verifypagoCreation(self.tarjeta_data['numero'])
 
-        # Submit the deletion form
-        response = self.client.post(self.delvoto_url, data={'id': voto_id})
-        num_rows, voto_id = self.verifyvotoCreation(numeroDNI)
-        self.assertEqual(num_rows, 0)
-        self.assertTemplateUsed(response, 'template_mensaje.html')
-        self.assertContains(response, '¡Voto eliminado correctamente!')
+        response = self.client.post(reverse('delpago'), {'id': pago_id})
 
-    def test_20_delvoto_invalid_id(self):
-        # Submit with a non-existing ID
-        response = self.client.post(self.delvoto_url, data={'id': 999})
-        self.assertTemplateUsed(response, 'template_mensaje.html')
-        self.assertContains(response, 'Error:')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertContains(response, "Pago eliminado correctamente")
 
-    def test_25_getvotos_valid_idProcesoElectoral(self):
-        # Create two Voto instances for the same proceso electoral
-        voto_data = {**self.voto_data, 
-                     'marcaTiempo': '2022-01-01 00:00:00',
-                     'codigoRespuesta': '000',
-                     'censo_id': self.censo_data['numeroDNI']}
-        self.insertVoto(voto_data)
-        # Submit a GetVotosForm with a valid idProcesoElectoral
+    def test_035_delpago_invalid_post(self):
+        """Test deletion of a non-existing pago."""
+        response = self.client.post(reverse('delpago'), {'id': 999999998})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertContains(response, "Error")
+
+    def test_04_getPagos_post(self):
+        """Test retrieval of pagos filtered by comercio."""
+        # Insert tarjetas
+        for numero in ['83583583', '67867868']:
+            self.tarjeta_data['numero'] = numero
+            self.insertTarjeta(self.tarjeta_data)
+
+        # Insert pagos
+        pagos = [
+            ('aaaaa0', 'COM123', self.tarjeta_data['numero']),
+            ('aaaaa1', 'c0', '83583583'),
+            ('aaaaa2', 'c0', '67867868'),
+        ]
+
+        for transaccion, comercio, tarjeta in pagos:
+            self.insertPago({
+                **self.pago_valid_data,
+                'idTransaccion': transaccion,
+                'idComercio': comercio,
+                'marcaTiempo': '2022-01-01 00:00:00',
+                'codigoRespuesta': '000',
+                'tarjeta_id': tarjeta
+            })
+
+        response = self.client.post(reverse('getpagos'), {'idComercio': 'c0'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertContains(response, "aaaaa1")
+        self.assertContains(response, "aaaaa2")
+        self.assertNotContains(response, "aaaaa0")
+
+    def test_10_testdb_post(self):
+        """Test combined tarjeta + pago submission."""
+        data = {**self.tarjeta_data, **self.pago_valid_data}
+
+        response = self.client.post(reverse('testbd'), data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        pago = response.context.get('pago')
+        for key in self.pago_valid_data:
+            if key != 'tarjeta_id':
+                self.assertEqual(self.pago_valid_data[key], pago[key])
+
+    def test_11_testdb_invalid_post(self):
+        """Test testdb endpoint with missing tarjeta data."""
         response = self.client.post(
-            self.getvotos_url, data={'idProcesoElectoral': 'ELEC123'})
-        self.assertEqual(len(response.context['result']), 1)
-        self.assertTemplateUsed(response, 'template_get_votos_result.html')
+            reverse('testbd'),
+            data=self.pago_valid_data,
+            format='json'
+        )
 
-    def test_30_testbd_invalid_submission(self):
-        # Submit empty form data
-        response = self.client.post(self.testbd_url, data={})
-        self.assertIn('Error', str(response.content))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertContains(response, "Error")
