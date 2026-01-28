@@ -1,158 +1,138 @@
+# Test for web services related to payment and card operations.
+# implemented as a REST API using Django REST Framework.
+# this tests check the P1 backend implementation.
 from copy import deepcopy
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from .models import Censo, Voto
-from .serializers import VotoSerializer
+from .models import Tarjeta, Pago
+from .serializers import PagoSerializer
 # from django.forms.models import model_to_dict
+
+# ApiViewTest is a Django test case designed to verify the behavior of
+# the REST API
+# endpoints related to payment (Pago) and card (Tarjeta) operations.
+# It uses Django REST Framework’s APIClient to simulate HTTP
+# requests and validate
+# both successful workflows and error conditions.
 
 
 class ApiViewTest(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.url_voto_store = reverse('voto')
-        self.url_censo_check = reverse('censo')
+        self.url_pago_store = reverse('pago')
+        self.url_tarjeta_check = reverse('tarjeta')
         # self.url_testbd = reverse('testbd')
 
-        self.voto_valid_data = {
-            "idCircunscripcion": "CIRC123",
-            "idMesaElectoral": "MESA123",
-            "idProcesoElectoral": "ELEC123",
-            "nombreCandidatoVotado": "Candidate A",
-            "censo_id": "123456789"
+        self.pago_valid_data = {
+            "idComercio": "COM123",
+            "idTransaccion": "TR123",
+            "importe": 123.0,
+            "tarjeta_id": "123456789"
         }
 
-        self.voto_invalid_data = {
-            "idCircunscripcion": "CIRC123",
-            "idMesaElectoral": "MESA123",
-            # Missing 'idProcesoElectoral'
-            "nombreCandidatoVotado": "Candidate A"
+        self.pago_invalid_data = {
+            "idComercio": "COM123",
+            # Missing 'idTransacción'
+            "importe": 123.0,
+            "tarjeta_id": "123456789"
         }
 
-        self.censo_data = {
-            'numeroDNI': '39739740E',
+        self.tarjeta_data = {
+            'numero': '1111 2222 3333 4444',
             'nombre': 'Jose Moreno Locke',
-            'fechaNacimiento': '09/04/66',
+            'fechaCaducidad': '04/36',
             'codigoAutorizacion': '729'
         }
-        self.censo = Censo.objects.create(**self.censo_data)
+        self.tarjeta = Tarjeta.objects.create(**self.tarjeta_data)
 
-    def test_01_censo_check_valid_data(self):
+    def test_01_tarjeta_check_valid_data(self):
         # Test storing valid data
         response = self.client.post(
-            self.url_censo_check,
-            data=self.censo_data,  # voto data
+            self.url_tarjeta_check,
+            data=self.tarjeta_data,  # tarjeta data
             format='json'
         )
         # Check if the response is 200 OK and the message matches
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            response.json(), {'message': 'Datos encontrados en Censo.'})
+            response.json(), {'message': 'Datos encontrados en la base de datos'})
 
-    def test_02_censo_check_invalid_data(self):
-        # Test checking censo with  invalid data (missing fields)
-        self.censo_data['numeroDNI'] = '1234'
+    def test_02_tarjeta_check_invalid_data(self):
+        # Test checking tarjeta with  invalid data (missing fields)
+        self.tarjeta_data['numero'] = '1234'
         response = self.client.post(
-            self.url_censo_check,
-            data=self.censo_data,  # voto data
+            self.url_tarjeta_check,
+            data=self.tarjeta_data,  # tarjeta data
             format='json'
         )
-        # Check if the response is 400 Bad Request
+        # Check if the response is not found
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        # Confirm that no 'voto_data' was saved in the session
+        # Confirm that no data was found
         self.assertEqual(
-            response.json(), {'message': 'Datos no encontrados en Censo.'})
+            response.json(), {'message': 'Datos no encontrados en la base de datos'})
 
-    def test_05_list_votos(self):
-        # create another censo entry. There is one with id=39739740E
-        # stored in self.censo
-        self.voto_valid_data.pop('censo_id')
-        self.censo_data['numeroDNI'] = '123456789'
-        censo2 = Censo.objects.create(**self.censo_data)
-        # create voto entry
-        _ = Voto.objects.create(**self.voto_valid_data, censo=self.censo)
-        # create another voto entry
-        self.voto_valid_data['nombreCandidatoVotado'] = 'Candidate B'
-        _ = Voto.objects.create(**self.voto_valid_data, censo=censo2)
-        another_voto = deepcopy(self.voto_valid_data)
-        another_voto['idProcesoElectoral'] = 'another process'
-        _ = Voto.objects.create(**another_voto, censo=censo2)
+    def test_05_list_pagos(self):
+        # create another tarjeta entry. There is one with id=1111 2222 3333 4444
+        # stored in self.tarjeta
+        self.pago_valid_data.pop('tarjeta_id')
+        self.tarjeta_data['numero'] = '2222 3333 4444 5555'
+        tarjeta2 = Tarjeta.objects.create(**self.tarjeta_data)
+        # create pago entry
+        _ = Pago.objects.create(**self.pago_valid_data, tarjeta=self.tarjeta)
+        # create another pago entry
+        self.pago_valid_data['idComercio'] = "COM234"
+        _ = Pago.objects.create(**self.pago_valid_data, tarjeta=tarjeta2)
+        another_pago = deepcopy(self.pago_valid_data)
+        another_pago['idTransaccion'] = 'TR234'
+        _ = Pago.objects.create(**another_pago, tarjeta=tarjeta2)
 
         url = reverse(
-            'procesoelectoral',
-            args=[self.voto_valid_data['idProcesoElectoral']])
+            'comercio',
+            args=[self.pago_valid_data['idComercio']])
         response = self.client.get(url)
-
         # Ensure the request was successful
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         # Verify the response data
-        votos = Voto.objects.filter(
-            idProcesoElectoral=self.voto_valid_data['idProcesoElectoral'])
-        serializer = VotoSerializer(votos, many=True)
+        pagos = Pago.objects.filter(
+            idComercio=self.pago_valid_data['idComercio'])
+        serializer = PagoSerializer(pagos, many=True)
         self.assertEqual(response.data, serializer.data)
 
-    def test_10_voto_store(self):
+    def test_10_pago_store(self):
 
         # Test storing valid data
-        # self.voto_valid_data['numeroDNI'] = '39739740E'
-        self.voto_valid_data['censo_id'] = '39739740E'
+        self.pago_valid_data['tarjeta_id'] = '1111 2222 3333 4444'
         response = self.client.post(
-            reverse('voto'),
-            data=self.voto_valid_data,
+            reverse('pago'),
+            data=self.pago_valid_data,
             format='json'
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for k, v in self.voto_valid_data.items():
-            if k == 'censo_id':
+        for k, v in self.pago_valid_data.items():
+            if k == 'tarjeta_id':
                 break
             self.assertEqual(v, response.data[k])
 
-    def test_20_delete_existing_voto(self):
-        """Test deleting an existing Voto object."""
-        # create voto entry
-        voto = Voto.objects.create(**self.voto_valid_data, censo=self.censo)
-        # Build the delete URL using the ID of the created Voto instance
-        url = reverse('voto', args=[voto.id])
+    def test_20_delete_existing_pago(self):
+        """Test deleting an existing Pago object."""
+        # create pago entry
+        pago = Pago.objects.create(
+            **self.pago_valid_data, tarjeta=self.tarjeta)
+        # Build the delete URL using the ID of the created Pago instance
+        url = reverse('pago', args=[pago.id])
         _ = self.client.delete(url)
 
-        # Verify that the Voto instance has been deleted from the database
-        self.assertFalse(Voto.objects.filter(id=voto.id).exists())
+        # Verify that the Pago instance has been deleted from the database
+        self.assertFalse(Pago.objects.filter(id=pago.id).exists())
 
-    def test_21_delete_nonexistent_voto(self):
-        """Test attempting to delete a Voto object that does not exist."""
+    def test_21_delete_nonexistent_pago(self):
+        """Test attempting to delete a Pago object that does not exist."""
         # Build the delete URL using an ID that doesn't exist
-        url = reverse('voto', args=[1234567])
+        url = reverse('pago', args=[1234567])
         response = self.client.delete(url)
 
         # Check that the response status is 404 Not Found
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-    # def test_30_TestBD(self):
-    #     censo_data = model_to_dict(self.censo)
-    #     data = {**censo_data, **self.voto_valid_data}
-    #     # Test storing valid data
-    #     response = self.client.post(
-    #         self.url_testbd,
-    #         data=data,
-    #         format='json'
-    #     )
-    #     # Check if the response is 200 OK and the message matches
-    #     self.assertEqual(response.status_code, status.HTTP_200_OK)
-    #     return_dict = response.json()
-    #     for k, v in self.voto_valid_data.items():
-    #         self.assertEqual(v, return_dict[k])
-    #     self.assertTrue(Voto.objects.exists())
-
-    # def test_31_TestBD_with_invalid_vote(self):
-    #     censo_data = model_to_dict(self.censo)
-    #     data = {**censo_data}
-    #     # Test storing valid data
-    #     response = self.client.post(
-    #         self.url_testbd,
-    #         data=data,
-    #         format='json'
-    #     )
-    #     # Check if the response is 200 OK and the message matches
-    #     self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
